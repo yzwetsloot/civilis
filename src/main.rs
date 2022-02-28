@@ -15,14 +15,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    eprintln!("Fetching {:?}...", url);
-
-    let res = reqwest::get(url).await?;
-
-    eprintln!("Response: {:?} {}", res.version(), res.status());
-    eprintln!("Headers: {:#?}\n", res.headers());
-
-    let body = res.text().await?;
+    let body = get(url).await?;
 
     let document = Html::parse_document(&body);
     let selector = Selector::parse("a").unwrap();
@@ -39,7 +32,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("{:#?}", domains);
 
+    for domain in domains {
+        get(format!("https://{}", domain)).await?;
+    }
+
     Ok(())
+}
+
+async fn get(url: String) -> Result<String, Box<dyn Error>> {
+    eprintln!("Fetch {}", url);
+
+    let res = reqwest::get(url).await?;
+    eprintln!("Got {}", res.status());
+
+    let body = res.text().await?;
+    Ok(body)
 }
 
 fn parse_tld(url: &str) -> Option<String> {
