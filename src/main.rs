@@ -1,3 +1,6 @@
+use async_recursion::async_recursion;
+use civilis::{Graph, Vertex};
+use futures::future::join_all;
 use psl::{List, Psl};
 use scraper::{Html, Selector};
 use std::collections::HashSet;
@@ -15,26 +18,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    visit(url).await?;
+
+    Ok(())
+}
+
+#[async_recursion(?Send)]
+async fn visit(url: String) -> Result<(), Box<dyn Error>> {
     let body = get(url).await?;
 
     let document = Html::parse_document(&body);
     let selector = Selector::parse("a").unwrap();
 
-    let mut domains = HashSet::new();
+    let domains: HashSet<_> = document
+        .select(&selector)
+        .filter_map(|el| el.value().attr("href"))
+        .filter_map(|href| parse_tld(href))
+        .collect();
 
-    for element in document.select(&selector) {
-        if let Some(href) = element.value().attr("href") {
-            if let Some(domain) = parse_tld(href) {
-                domains.insert(domain);
-            }
-        }
-    }
-
-    println!("{:#?}", domains);
-
-    for domain in domains {
-        get(format!("https://{}", domain)).await?;
-    }
+    join_all(
+        domains
+            .iter()
+            .map(|domain| visit(format!("https://{}", domain))),
+    )
+    .await;
 
     Ok(())
 }
