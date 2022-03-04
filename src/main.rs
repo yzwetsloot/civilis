@@ -1,11 +1,12 @@
 use async_recursion::async_recursion;
 use psl::{List, Psl};
+use reqwest::Client;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
 use std::error::Error;
 use std::str;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use url::Url;
 
 type History = Arc<Mutex<HashSet<String>>>;
@@ -24,8 +25,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let history = Arc::new(Mutex::new(HashSet::new()));
 
+    let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
+
     let start = Instant::now();
-    visit(url, &history, 0).await?;
+    visit(url, &history, &client, 0).await?;
 
     let duration = start.elapsed();
 
@@ -36,20 +39,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 #[async_recursion]
-async fn visit(url: String, history: &History, depth: u16) -> Result<(), Box<dyn Error>> {
+async fn visit(
+    url: String,
+    history: &History,
+    client: &Client,
+    depth: u16,
+) -> Result<(), Box<dyn Error>> {
     if depth == MAX_DEPTH {
         return Ok(());
     }
 
     let mut tasks = vec![];
 
-    let body = get(url).await?;
+    let body = get(client, url).await?;
 
     for domain in parse_unique_domains(body, history) {
         let history = history.clone();
 
+        let client = client.clone();
+
         let handle = tokio::spawn(async move {
-            if let Err(error) = visit(format!("https://{}", domain), &history, depth + 1).await {
+            if let Err(error) =
+                visit(format!("https://{}", domain), &history, &client, depth + 1).await
+            {
                 eprintln!("{}", error);
             }
         });
@@ -64,10 +76,10 @@ async fn visit(url: String, history: &History, depth: u16) -> Result<(), Box<dyn
     Ok(())
 }
 
-async fn get(url: String) -> Result<String, Box<dyn Error>> {
+async fn get(client: &Client, url: String) -> Result<String, Box<dyn Error>> {
     eprintln!("Fetch {}", url);
 
-    let res = reqwest::get(url).await?;
+    let res = client.get(url).send().await?;
     eprintln!("Got {}", res.status());
 
     let body = res.text().await?;
