@@ -5,14 +5,15 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::str;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use url::Url;
 
 type History = Arc<Mutex<HashSet<String>>>;
 
+const MAX_DEPTH: u16 = 5;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let history = Arc::new(Mutex::new(HashSet::new()));
-
     let url = match std::env::args().nth(1) {
         Some(url) => url,
         None => {
@@ -21,44 +22,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    visit(url, history).await;
+    let history = Arc::new(Mutex::new(HashSet::new()));
+
+    let start = Instant::now();
+    visit(url, &history, 0).await?;
+
+    let duration = start.elapsed();
+
+    let history = history.lock().unwrap();
+    println!("found {} tlds in {:?}", history.len(), duration);
 
     Ok(())
 }
 
 #[async_recursion]
-async fn visit(url: String, history: History) {
-    let body = get(url).await.unwrap();
-
-    let domains = {
-        let document = Html::parse_document(&body);
-        let selector = Selector::parse("a").unwrap();
-
-        let domains: HashSet<_> = document
-            .select(&selector)
-            .filter_map(|el| el.value().attr("href"))
-            .filter_map(|href| parse_tld(href))
-            .filter(|tld| {
-                let mut history = history.lock().unwrap();
-                if history.contains(tld) {
-                    false
-                } else {
-                    history.insert(tld.to_string());
-                    true
-                }
-            })
-            .collect();
-
-        domains
-    };
+async fn visit(url: String, history: &History, depth: u16) -> Result<(), Box<dyn Error>> {
+    if depth == MAX_DEPTH {
+        return Ok(());
+    }
 
     let mut tasks = vec![];
 
-    for domain in domains {
+    let body = get(url).await?;
+
+    for domain in parse_unique_domains(body, history) {
         let history = history.clone();
 
         let handle = tokio::spawn(async move {
-            visit(format!("https://{}", domain), history).await;
+            if let Err(error) = visit(format!("https://{}", domain), &history, depth + 1).await {
+                eprintln!("{}", error);
+            }
         });
 
         tasks.push(handle);
@@ -67,6 +60,8 @@ async fn visit(url: String, history: History) {
     for task in tasks {
         task.await.unwrap();
     }
+
+    Ok(())
 }
 
 async fn get(url: String) -> Result<String, Box<dyn Error>> {
@@ -77,6 +72,26 @@ async fn get(url: String) -> Result<String, Box<dyn Error>> {
 
     let body = res.text().await?;
     Ok(body)
+}
+
+fn parse_unique_domains(body: String, history: &History) -> HashSet<String> {
+    let document = Html::parse_document(&body);
+    let selector = Selector::parse("a").unwrap();
+
+    document
+        .select(&selector)
+        .filter_map(|el| el.value().attr("href"))
+        .filter_map(|href| parse_tld(href))
+        .filter(|tld| {
+            let mut history = history.lock().unwrap();
+            if history.contains(tld) {
+                false
+            } else {
+                history.insert(tld.to_string());
+                true
+            }
+        })
+        .collect()
 }
 
 fn parse_tld(url: &str) -> Option<String> {
