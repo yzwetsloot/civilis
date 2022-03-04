@@ -4,10 +4,15 @@ use scraper::{Html, Selector};
 use std::collections::HashSet;
 use std::error::Error;
 use std::str;
+use std::sync::{Arc, Mutex};
 use url::Url;
+
+type History = Arc<Mutex<HashSet<String>>>;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let history = Arc::new(Mutex::new(HashSet::new()));
+
     let url = match std::env::args().nth(1) {
         Some(url) => url,
         None => {
@@ -16,13 +21,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    visit(url).await;
+    visit(url, history).await;
 
     Ok(())
 }
 
 #[async_recursion]
-async fn visit(url: String) {
+async fn visit(url: String, history: History) {
     let body = get(url).await.unwrap();
 
     let domains = {
@@ -33,6 +38,15 @@ async fn visit(url: String) {
             .select(&selector)
             .filter_map(|el| el.value().attr("href"))
             .filter_map(|href| parse_tld(href))
+            .filter(|tld| {
+                let mut history = history.lock().unwrap();
+                if history.contains(tld) {
+                    false
+                } else {
+                    history.insert(tld.to_string());
+                    true
+                }
+            })
             .collect();
 
         domains
@@ -41,8 +55,10 @@ async fn visit(url: String) {
     let mut tasks = vec![];
 
     for domain in domains {
+        let history = history.clone();
+
         let handle = tokio::spawn(async move {
-            visit(format!("https://{}", domain)).await;
+            visit(format!("https://{}", domain), history).await;
         });
 
         tasks.push(handle);
