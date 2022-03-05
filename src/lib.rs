@@ -49,9 +49,7 @@ async fn visit(
         let client = client.clone();
 
         let handle = tokio::spawn(async move {
-            if let Err(error) =
-                visit(format!("https://{}", domain), &history, &client, depth + 1).await
-            {
+            if let Err(error) = visit(domain, &history, &client, depth + 1).await {
                 eprintln!("{}", error);
             }
         });

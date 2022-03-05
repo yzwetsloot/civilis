@@ -11,17 +11,20 @@ pub fn parse_unique_domains(body: String, history: &super::History) -> HashSet<S
     document
         .select(&selector)
         .filter_map(|el| el.value().attr("href"))
-        .filter_map(|href| parse_tld(href))
-        .filter(|tld| {
-            let mut history = history.lock().unwrap();
-            if history.contains(tld) {
-                false
-            } else {
-                history.insert(tld.to_string());
-                true
-            }
-        })
+        .filter_map(|href| is_new_link(href, history))
         .collect()
+}
+
+fn is_new_link(url: &str, history: &super::History) -> Option<String> {
+    if let Some(tld) = parse_tld(url) {
+        let mut history = history.lock().unwrap();
+        if !history.contains(&tld) {
+            println!("{}", tld);
+            history.insert(tld.to_string());
+            return Some(url.to_string());
+        }
+    }
+    None
 }
 
 fn parse_tld(url: &str) -> Option<String> {
@@ -45,7 +48,7 @@ mod tests {
         <h1>test</h1>
         <p>lorem ipsum</p>
     </body>
-</html>        
+</html>
 ";
         let empty_set: HashSet<String> = HashSet::new(); // empty set
         let history = Arc::new(Mutex::new(HashSet::new())); // empty history
@@ -85,7 +88,7 @@ mod tests {
 </html>
 "#;
         let mut set = HashSet::new();
-        set.insert("google.com".to_string());
+        set.insert("https://www.google.com".to_string());
 
         let history = Arc::new(Mutex::new(HashSet::new()));
         {
@@ -94,6 +97,22 @@ mod tests {
         }
 
         assert_eq!(set, parse_unique_domains(body.to_string(), &history));
+    }
+
+    #[test]
+    fn is_new_link_relative_url() {
+        let history = Arc::new(Mutex::new(HashSet::new()));
+        assert_eq!(None, is_new_link("/", &history));
+    }
+
+    #[test]
+    fn is_new_link_unseen() {
+        let history = Arc::new(Mutex::new(HashSet::new()));
+        {
+            let mut history = history.lock().unwrap();
+            history.insert("github.com".to_string());
+        }
+        assert_eq!(None, is_new_link("https://test.github.com", &history));
     }
 
     #[test]
