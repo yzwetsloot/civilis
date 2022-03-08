@@ -37,8 +37,8 @@ async fn main() {
     let count = Arc::new(Mutex::new(Count(1)));
 
     while let Some(link) = rx.recv().await {
-        if let Some(tld) = parse_tld(&link) {
-            if !links.contains(&tld) {
+        if let Some(domain) = parse_root_domain(&link) {
+            if !links.contains(&domain) {
                 {
                     let mut value = count.lock().unwrap();
 
@@ -50,7 +50,7 @@ async fn main() {
                     println!("{} running tasks ({}) - {}", value.0, links.len(), link);
                 }
 
-                links.insert(tld);
+                links.insert(domain);
 
                 let client = client.clone();
                 let tx = tx.clone();
@@ -98,7 +98,7 @@ fn parse_anchor_tags(body: String) -> HashSet<String> {
         .collect()
 }
 
-fn parse_tld(url: &str) -> Option<String> {
+fn parse_root_domain(url: &str) -> Option<String> {
     let url = Url::parse(url).ok()?;
     let host = url.host_str()?;
     let domain = List.domain(host.as_bytes())?;

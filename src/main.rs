@@ -1,17 +1,10 @@
-use civilis::run;
+use civilis::Args;
 use std::error::Error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let url = match std::env::args().nth(1) {
-        Some(url) => url,
-        None => {
-            println!("No CLI URL provided, using default.");
-            "https://hyper.rs".into()
-        }
-    };
-
-    run(url).await?;
+    let args = Args::new();
+    civilis::run(args).await?;
 
     Ok(())
 }

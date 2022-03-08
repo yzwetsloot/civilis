@@ -5,25 +5,33 @@ use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+mod args;
 mod parser;
 mod request;
 
+pub use args::Args;
+
 type History = Arc<Mutex<HashSet<String>>>;
 
-const MAX_DEPTH: u16 = 5;
-
-pub async fn run(url: String) -> Result<(), Box<dyn Error>> {
+pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
     let history = Arc::new(Mutex::new(HashSet::new()));
 
-    let client = request::configure_client()?;
+    let client = request::configure_client(args.timeout)?;
 
     let start = Instant::now();
-    visit(url, &history, &client, 0).await?;
+    visit(args.url, &history, &client, 0, args.depth).await?;
 
     let duration = start.elapsed();
 
     let history = history.lock().unwrap();
-    println!("found {} tlds in {:?}", history.len(), duration);
+
+    let reqs = history.len() as u64 / duration.as_secs();
+    println!(
+        "\nfound {} domains in {:?} ({} req/s)",
+        history.len(),
+        duration,
+        reqs,
+    );
 
     Ok(())
 }
@@ -34,8 +42,9 @@ async fn visit(
     history: &History,
     client: &Client,
     depth: u16,
+    max_depth: u16,
 ) -> Result<(), Box<dyn Error>> {
-    if depth == MAX_DEPTH {
+    if depth == max_depth {
         return Ok(());
     }
 
@@ -49,16 +58,14 @@ async fn visit(
         let client = client.clone();
 
         let handle = tokio::spawn(async move {
-            if let Err(error) = visit(domain, &history, &client, depth + 1).await {
-                eprintln!("{}", error);
-            }
+            let _ = visit(domain, &history, &client, depth + 1, max_depth).await;
         });
 
         tasks.push(handle);
     }
 
     for task in tasks {
-        task.await.unwrap();
+        let _ = task.await;
     }
 
     Ok(())

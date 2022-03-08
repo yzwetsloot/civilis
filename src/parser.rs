@@ -16,18 +16,18 @@ pub fn parse_unique_domains(body: String, history: &super::History) -> HashSet<S
 }
 
 fn is_new_link(url: &str, history: &super::History) -> Option<String> {
-    if let Some(tld) = parse_tld(url) {
+    if let Some(domain) = parse_root_domain(url) {
         let mut history = history.lock().unwrap();
-        if !history.contains(&tld) {
-            println!("{}", tld);
-            history.insert(tld.to_string());
+        if !history.contains(&domain) {
+            println!("{} - {}", domain, history.len());
+            history.insert(domain.to_string());
             return Some(url.to_string());
         }
     }
     None
 }
 
-fn parse_tld(url: &str) -> Option<String> {
+fn parse_root_domain(url: &str) -> Option<String> {
     let url = Url::parse(url).ok()?;
     let host = url.host_str()?;
     let domain = List.domain(host.as_bytes())?;
@@ -116,20 +116,23 @@ mod tests {
     }
 
     #[test]
-    fn parse_tld_relative_url() {
+    fn parse_root_domain_relative_url() {
         let url = "/test";
-        assert_eq!(None, parse_tld(url));
+        assert_eq!(None, parse_root_domain(url));
     }
 
     #[test]
-    fn parse_tld_blogspot_domain() {
+    fn parse_root_domain_blogspot_domain() {
         let url = "https://www.test.blogspot.com";
-        assert_eq!(Some("test.blogspot.com".to_string()), parse_tld(url));
+        assert_eq!(
+            Some("test.blogspot.com".to_string()),
+            parse_root_domain(url)
+        );
     }
 
     #[test]
-    fn parse_tld_google_domain() {
+    fn parse_root_domain_google_domain() {
         let url = "https://myaccount.google.com";
-        assert_eq!(Some("google.com".to_string()), parse_tld(url));
+        assert_eq!(Some("google.com".to_string()), parse_root_domain(url));
     }
 }
