@@ -17,10 +17,8 @@ pub fn parse_unique_domains(body: String, history: &super::History) -> HashSet<S
 
 fn is_new_link(url: &str, history: &super::History) -> Option<String> {
     if let Some(domain) = parse_root_domain(url) {
-        let mut history = history.lock().unwrap();
-        if !history.contains(&domain) {
-            println!("{} - {}", domain, history.len());
-            history.insert(domain.to_string());
+        if history.insert(domain.to_string()) {
+            println!("{} - {}", history.len(), domain);
             return Some(url.to_string());
         }
     }
@@ -37,8 +35,11 @@ fn parse_root_domain(url: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::History;
+
     use super::*;
-    use std::sync::{Arc, Mutex};
+
+    const NUM_SHARDS: u64 = 1;
 
     #[test]
     fn parse_unique_no_anchor_tags() {
@@ -51,7 +52,7 @@ mod tests {
 </html>
 ";
         let empty_set: HashSet<String> = HashSet::new(); // empty set
-        let history = Arc::new(Mutex::new(HashSet::new())); // empty history
+        let history = History::new(NUM_SHARDS); // empty history
 
         assert_eq!(empty_set, parse_unique_domains(body.to_string(), &history));
     }
@@ -67,7 +68,7 @@ mod tests {
 </html>
 ";
         let empty_set: HashSet<String> = HashSet::new(); // empty set
-        let history = Arc::new(Mutex::new(HashSet::new())); // empty history
+        let history = History::new(NUM_SHARDS); // empty history
 
         assert_eq!(empty_set, parse_unique_domains(body.to_string(), &history));
     }
@@ -90,28 +91,23 @@ mod tests {
         let mut set = HashSet::new();
         set.insert("https://www.google.com".to_string());
 
-        let history = Arc::new(Mutex::new(HashSet::new()));
-        {
-            let mut history = history.lock().unwrap();
-            history.insert("github.com".to_string());
-        }
+        let history = History::new(NUM_SHARDS);
+        history.insert("github.com".to_string());
 
         assert_eq!(set, parse_unique_domains(body.to_string(), &history));
     }
 
     #[test]
     fn is_new_link_relative_url() {
-        let history = Arc::new(Mutex::new(HashSet::new()));
+        let history = History::new(NUM_SHARDS);
         assert_eq!(None, is_new_link("/", &history));
     }
 
     #[test]
     fn is_new_link_unseen() {
-        let history = Arc::new(Mutex::new(HashSet::new()));
-        {
-            let mut history = history.lock().unwrap();
-            history.insert("github.com".to_string());
-        }
+        let history = History::new(NUM_SHARDS);
+        history.insert("github.com".to_string());
+
         assert_eq!(None, is_new_link("https://test.github.com", &history));
     }
 

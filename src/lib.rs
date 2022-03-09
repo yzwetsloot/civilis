@@ -1,20 +1,20 @@
 use async_recursion::async_recursion;
 use reqwest::Client;
-use std::collections::HashSet;
 use std::error::Error;
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 mod args;
+mod history;
 mod parser;
 mod request;
 
 pub use args::Args;
+pub use history::History;
 
-type History = Arc<Mutex<HashSet<String>>>;
+pub static mut SIGTERM: bool = false;
 
 pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
-    let history = Arc::new(Mutex::new(HashSet::new()));
+    let history = History::new(args.shards);
 
     let client = request::configure_client(args.timeout)?;
 
@@ -23,14 +23,11 @@ pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
 
     let duration = start.elapsed();
 
-    let history = history.lock().unwrap();
-
-    let reqs = history.len() as u64 / duration.as_secs();
+    let domain_count = history.len() as u64;
+    let reqs = domain_count / duration.as_secs();
     println!(
         "\nfound {} domains in {:?} ({} req/s)",
-        history.len(),
-        duration,
-        reqs,
+        domain_count, duration, reqs,
     );
 
     Ok(())
@@ -45,6 +42,10 @@ async fn visit(
     max_depth: u16,
 ) -> Result<(), Box<dyn Error>> {
     if depth == max_depth {
+        return Ok(());
+    }
+
+    if unsafe { SIGTERM } {
         return Ok(());
     }
 

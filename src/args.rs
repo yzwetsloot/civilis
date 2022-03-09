@@ -18,6 +18,10 @@ pub struct Args {
     /// Set recursive visitation depth
     #[clap(long)]
     pub depth: u16,
+
+    /// Set number of shards to use for shared state set
+    #[clap(long, short, default_value = "5")]
+    pub shards: u64,
 }
 
 impl Args {
