@@ -1,31 +1,35 @@
+use super::{Graph, Vertex};
 use psl::{List, Psl};
 use scraper::{Html, Selector};
 use std::collections::HashSet;
 use std::str;
 use url::Url;
 
-pub fn parse_unique_domains(body: String, history: &super::History) -> HashSet<String> {
+pub fn parse_unique_domains(body: String, src: String, g: &Graph) -> HashSet<String> {
     let document = Html::parse_document(&body);
     let selector = Selector::parse("a").unwrap();
 
     document
         .select(&selector)
         .filter_map(|el| el.value().attr("href"))
-        .filter_map(|href| is_new_link(href, history))
+        .filter_map(|href| is_new_link(href, src.clone(), g))
         .collect()
 }
 
-fn is_new_link(url: &str, history: &super::History) -> Option<String> {
+fn is_new_link(url: &str, src: String, g: &Graph) -> Option<String> {
+    let src = parse_root_domain(&src).unwrap();
     if let Some(domain) = parse_root_domain(url) {
-        if history.insert(domain.to_string()) {
-            println!("{} - {}", history.len(), domain);
+        if !g.contains(&domain) {
+            g.add_vertex(Vertex::new(domain.clone()));
+            println!("{} - {}", g.size(), domain);
+            g.add_edge(&src, &domain);
             return Some(url.to_string());
         }
     }
     None
 }
 
-fn parse_root_domain(url: &str) -> Option<String> {
+pub fn parse_root_domain(url: &str) -> Option<String> {
     let url = Url::parse(url).ok()?;
     let host = url.host_str()?;
     let domain = List.domain(host.as_bytes())?;
