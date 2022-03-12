@@ -39,11 +39,12 @@ pub fn parse_root_domain(url: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::History;
+    use crate::{Graph, Vertex};
 
     use super::*;
 
     const NUM_SHARDS: u64 = 1;
+    const ROOT_DOMAIN: &str = "https://github.com";
 
     #[test]
     fn parse_unique_no_anchor_tags() {
@@ -56,9 +57,12 @@ mod tests {
 </html>
 ";
         let empty_set: HashSet<String> = HashSet::new(); // empty set
-        let history = History::new(NUM_SHARDS); // empty history
+        let graph = Graph::new(NUM_SHARDS); // empty graph
 
-        assert_eq!(empty_set, parse_unique_domains(body.to_string(), &history));
+        assert_eq!(
+            empty_set,
+            parse_unique_domains(body.to_string(), ROOT_DOMAIN.to_string(), &graph)
+        );
     }
 
     #[test]
@@ -72,9 +76,12 @@ mod tests {
 </html>
 ";
         let empty_set: HashSet<String> = HashSet::new(); // empty set
-        let history = History::new(NUM_SHARDS); // empty history
+        let graph = Graph::new(NUM_SHARDS); // empty graph
 
-        assert_eq!(empty_set, parse_unique_domains(body.to_string(), &history));
+        assert_eq!(
+            empty_set,
+            parse_unique_domains(body.to_string(), ROOT_DOMAIN.to_string(), &graph)
+        );
     }
 
     #[test]
@@ -95,24 +102,29 @@ mod tests {
         let mut set = HashSet::new();
         set.insert("https://www.google.com".to_string());
 
-        let history = History::new(NUM_SHARDS);
-        history.insert("github.com".to_string());
-
-        assert_eq!(set, parse_unique_domains(body.to_string(), &history));
+        let graph = Graph::new(NUM_SHARDS);
+        graph.add_vertex(Vertex::new("github.com".to_string()));
+        assert_eq!(
+            set,
+            parse_unique_domains(body.to_string(), ROOT_DOMAIN.to_string(), &graph)
+        );
     }
 
     #[test]
     fn is_new_link_relative_url() {
-        let history = History::new(NUM_SHARDS);
-        assert_eq!(None, is_new_link("/", &history));
+        let graph = Graph::new(NUM_SHARDS);
+        assert_eq!(None, is_new_link("/", ROOT_DOMAIN.to_string(), &graph));
     }
 
     #[test]
     fn is_new_link_unseen() {
-        let history = History::new(NUM_SHARDS);
-        history.insert("github.com".to_string());
+        let graph = Graph::new(NUM_SHARDS);
+        graph.add_vertex(Vertex::new("github.com".to_string()));
 
-        assert_eq!(None, is_new_link("https://test.github.com", &history));
+        assert_eq!(
+            None,
+            is_new_link("https://test.github.com", ROOT_DOMAIN.to_string(), &graph)
+        );
     }
 
     #[test]
