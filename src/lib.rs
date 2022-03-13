@@ -4,31 +4,40 @@ use std::error::Error;
 use std::time::Instant;
 
 mod args;
-mod history;
+mod graph;
 mod parser;
 mod request;
 
 pub use args::Args;
-pub use history::History;
+pub use graph::{Graph, Vertex};
 
 pub static mut SIGTERM: bool = false;
 
 pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
-    let history = History::new(args.shards);
+    let g = Graph::new(args.shards);
 
     let client = request::configure_client(args.timeout)?;
 
     let start = Instant::now();
-    visit(args.url, &history, &client, 0, args.depth).await?;
+
+    let domain = parser::parse_root_domain(&args.url)
+        .expect(format!("unable to parse root domain from argument: {}", args.url).as_str());
+    g.add_vertex(Vertex::new(domain.clone()));
+
+    println!("{} - {}", g.size(), domain);
+
+    visit(args.url, &g, &client, 0, args.depth).await?;
 
     let duration = start.elapsed();
 
-    let domain_count = history.len() as u64;
+    let domain_count = g.size() as u64;
     let reqs = domain_count / duration.as_secs();
     println!(
         "\nfound {} domains in {:?} ({} req/s)",
         domain_count, duration, reqs,
     );
+
+    g.serialize().unwrap();
 
     Ok(())
 }
@@ -36,7 +45,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
 #[async_recursion]
 async fn visit(
     url: String,
-    history: &History,
+    graph: &Graph,
     client: &Client,
     depth: u16,
     max_depth: u16,
@@ -51,15 +60,15 @@ async fn visit(
 
     let mut tasks = vec![];
 
-    let body = request::get(client, url).await?;
+    let body = request::get(client, url.clone()).await?;
 
-    for domain in parser::parse_unique_domains(body, history) {
-        let history = history.clone();
+    for domain in parser::parse_unique_domains(body, url, graph) {
+        let graph = graph.clone();
 
         let client = client.clone();
 
         let handle = tokio::spawn(async move {
-            let _ = visit(domain, &history, &client, depth + 1, max_depth).await;
+            let _ = visit(domain, &graph, &client, depth + 1, max_depth).await;
         });
 
         tasks.push(handle);
