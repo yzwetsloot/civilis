@@ -20,12 +20,32 @@ impl Vertex {
         }
     }
 
-    pub fn add_outgoing(&mut self, v: SyncVertex) {
+    pub fn add_outgoing(&mut self, v: SyncVertex) -> bool {
+        // TODO: change parameter type to Vertex
+        if self.domain == v.lock().unwrap().domain {
+            // prevent self-loop
+            return false;
+        }
         self.outgoing.push(v);
+        true
     }
 
-    pub fn add_incoming(&mut self, v: SyncVertex) {
-        self.incoming.push(Arc::downgrade(&v)); // TODO
+    pub fn add_incoming(&mut self, v: SyncVertex) -> bool {
+        // TODO: change parameter type to Vertex instead of SyncVertex
+        if self.domain == v.lock().unwrap().domain {
+            // prevent self-loop
+            return false;
+        }
+        self.incoming.push(Arc::downgrade(&v)); // TODO: verify correct
+        true
+    }
+
+    pub fn in_degree(&self) -> usize {
+        self.incoming.len()
+    }
+
+    pub fn out_degree(&self) -> usize {
+        self.outgoing.len()
     }
 
     pub fn serialize() {
@@ -115,6 +135,50 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn add_outgoing_self_loop_vertex() {
+        let mut vertex = Vertex::new("github.com".to_string());
+
+        let cloned_vertex = Arc::new(Mutex::new(vertex.clone()));
+        let was_added = vertex.add_outgoing(cloned_vertex);
+
+        assert!(!was_added);
+
+        assert_eq!(vertex.out_degree(), 0);
+    }
+
+    #[test]
+    fn add_outgoing_vertex() {
+        let mut src = Vertex::new("github.com".to_string());
+        let dst = Vertex::new("stackoverflow.com".to_string());
+
+        src.add_outgoing(Arc::new(Mutex::new(dst)));
+
+        assert_eq!(src.out_degree(), 1);
+    }
+
+    #[test]
+    fn add_incoming_self_loop_vertex() {
+        let mut vertex = Vertex::new("github.com".to_string());
+
+        let cloned_vertex = Arc::new(Mutex::new(vertex.clone()));
+        let was_added = vertex.add_incoming(cloned_vertex);
+
+        assert!(!was_added);
+
+        assert_eq!(vertex.out_degree(), 0);
+    }
+
+    #[test]
+    fn add_incoming_vertex() {
+        let mut src = Vertex::new("github.com".to_string());
+        let dst = Vertex::new("stackoverflow.com".to_string());
+
+        src.add_incoming(Arc::new(Mutex::new(dst)));
+
+        assert_eq!(src.out_degree(), 1);
+    }
 
     fn init_empty_graph(num_shards: u64) -> Graph {
         Graph::new(num_shards)
