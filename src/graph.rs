@@ -1,6 +1,7 @@
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::{fmt, io};
 
 type SyncVertex = Arc<Mutex<Vertex>>;
 
@@ -50,6 +51,18 @@ impl Vertex {
 
     pub fn serialize() {
         todo!();
+    }
+}
+
+impl fmt::Display for Vertex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} (in {}, out {})",
+            self.domain,
+            self.in_degree(),
+            self.out_degree()
+        )
     }
 }
 
@@ -127,14 +140,39 @@ impl Graph {
         size
     }
 
-    pub fn serialize(&self) {
-        todo!();
+    pub fn serialize(&self) -> io::Result<()> {
+        use std::fs;
+
+        let mut text = String::new();
+
+        for shard in self.vertices.iter() {
+            let m = shard.lock().unwrap();
+            for v in m.values() {
+                let v = v.lock().unwrap();
+                text += format!("{}\n", v).as_str();
+            }
+        }
+
+        fs::write("out/graph", text)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn display_vertex() {
+        // mimics: github.com -> facebook.com -> stackoverflow.com
+        let src = Vertex::new("github.com".to_string());
+        let mut mid = Vertex::new("facebook.com".to_string());
+        let dst = Vertex::new("stackoverflow.com".to_string());
+
+        mid.add_incoming(Arc::new(Mutex::new(src)));
+        mid.add_outgoing(Arc::new(Mutex::new(dst)));
+
+        assert_eq!(format!("{}", mid), "facebook.com (in 1, out 1)");
+    }
 
     #[test]
     fn add_outgoing_self_loop_vertex() {
@@ -167,7 +205,7 @@ mod tests {
 
         assert!(!was_added);
 
-        assert_eq!(vertex.out_degree(), 0);
+        assert_eq!(vertex.in_degree(), 0);
     }
 
     #[test]
@@ -177,7 +215,7 @@ mod tests {
 
         src.add_incoming(Arc::new(Mutex::new(dst)));
 
-        assert_eq!(src.out_degree(), 1);
+        assert_eq!(src.in_degree(), 1);
     }
 
     fn init_empty_graph(num_shards: u64) -> Graph {
@@ -234,6 +272,8 @@ mod tests {
         graph.add_vertex(Vertex::new(dst.clone()));
 
         graph.add_edge(&src, &dst).unwrap(); // if Err -> test FAIL
+
+        graph.serialize().unwrap();
     }
 
     #[test]

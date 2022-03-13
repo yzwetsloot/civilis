@@ -37,6 +37,8 @@ pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
         domain_count, duration, reqs,
     );
 
+    g.serialize().unwrap();
+
     Ok(())
 }
 
