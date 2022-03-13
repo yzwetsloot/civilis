@@ -5,13 +5,11 @@ use std::time::Instant;
 
 mod args;
 mod graph;
-mod history;
 mod parser;
 mod request;
 
 pub use args::Args;
 pub use graph::{Graph, Vertex};
-pub use history::History;
 
 pub static mut SIGTERM: bool = false;
 
@@ -26,7 +24,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
         .expect(format!("unable to parse root domain from argument: {}", args.url).as_str());
     g.add_vertex(Vertex::new(domain.clone()));
 
-    println!("{} - {}", domain, g.size());
+    println!("{} - {}", g.size(), domain);
 
     visit(args.url, &g, &client, 0, args.depth).await?;
 

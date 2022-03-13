@@ -1,12 +1,14 @@
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
+
+type SyncVertex = Arc<Mutex<Vertex>>;
 
 #[derive(Clone)]
 pub struct Vertex {
     domain: String,
     incoming: Vec<Weak<Mutex<Vertex>>>,
-    outgoing: Vec<Arc<Mutex<Vertex>>>,
+    outgoing: Vec<SyncVertex>,
 }
 
 impl Vertex {
@@ -18,18 +20,24 @@ impl Vertex {
         }
     }
 
-    pub fn add_outgoing(&mut self, v: Arc<Mutex<Vertex>>) {
+    pub fn add_outgoing(&mut self, v: SyncVertex) {
         self.outgoing.push(v);
     }
 
-    pub fn add_incoming(&mut self, v: Arc<Mutex<Vertex>>) {
+    pub fn add_incoming(&mut self, v: SyncVertex) {
         self.incoming.push(Arc::downgrade(&v)); // TODO
+    }
+
+    pub fn serialize() {
+        todo!();
     }
 }
 
+type SyncShardedHashMap<T, V> = Arc<Vec<Mutex<HashMap<T, V>>>>;
+
 #[derive(Clone)]
 pub struct Graph {
-    vertices: Arc<Vec<Mutex<HashMap<String, Arc<Mutex<Vertex>>>>>>,
+    vertices: SyncShardedHashMap<String, SyncVertex>,
 }
 
 impl Graph {
@@ -50,40 +58,41 @@ impl Graph {
         s.finish() as usize % self.vertices.len()
     }
 
+    fn get_shard(&self, domain: &String) -> MutexGuard<HashMap<String, SyncVertex>> {
+        let index = self.get_index(&domain);
+        self.vertices[index].lock().unwrap()
+    }
+
     pub fn add_vertex(&self, v: Vertex) {
         let domain = v.domain.clone();
         let v = Arc::new(Mutex::new(v));
 
-        let index = self.get_index(&domain);
-        let mut vertices = self.vertices[index].lock().unwrap();
-
+        let mut vertices = self.get_shard(&domain);
         vertices.insert(domain, v);
     }
 
-    fn get_vertex(&self, domain: &String) -> Arc<Mutex<Vertex>> {
-        let index = self.get_index(domain);
-        let vertices = self.vertices[index].lock().unwrap();
+    fn get_vertex(&self, domain: &String) -> Option<SyncVertex> {
+        let vertices = self.get_shard(domain);
+        let vertex = vertices.get(domain)?;
 
-        Arc::clone(&vertices.get(domain).unwrap())
+        Some(Arc::clone(&vertex))
     }
 
-    pub fn add_edge(&self, src: &String, dst: &String) -> bool {
+    pub fn add_edge(&self, src: &String, dst: &String) -> Result<(), &str> {
         if src == dst {
             // ignore case of self-loop or buckle
-            return false;
+            return Err("source and destination vertex are the same");
         }
-        let src = self.get_vertex(src);
-        let dst = self.get_vertex(dst);
+        let src = self.get_vertex(src).ok_or("missing source vertex")?;
+        let dst = self.get_vertex(dst).ok_or("missing destination vertex")?;
 
         src.lock().unwrap().add_outgoing(Arc::clone(&dst));
         dst.lock().unwrap().add_incoming(src);
-        true
+        Ok(())
     }
 
     pub fn contains(&self, domain: &String) -> bool {
-        let index = self.get_index(&domain);
-        let vertices = self.vertices[index].lock().unwrap();
-
+        let vertices = self.get_shard(domain);
         vertices.contains_key(domain)
     }
 
@@ -100,5 +109,79 @@ impl Graph {
 
     pub fn serialize(&self) {
         todo!();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn init_empty_graph(num_shards: u64) -> Graph {
+        Graph::new(num_shards)
+    }
+
+    fn init_non_empty_graph(num_values: usize, num_shards: u64) -> Graph {
+        let graph = Graph::new(num_shards);
+
+        for i in 0..num_values {
+            graph.add_vertex(Vertex::new(format!("{} val", i)));
+        }
+
+        graph
+    }
+
+    #[test]
+    fn size_graph_empty() {
+        let graph = init_empty_graph(1);
+        assert_eq!(0, graph.size());
+    }
+
+    #[test]
+    fn size_graph_non_empty() {
+        let num_values = 10;
+        let graph = init_non_empty_graph(num_values, 1);
+        assert_eq!(num_values, graph.size());
+    }
+
+    #[test]
+    fn contains_graph() {
+        let graph = init_empty_graph(10);
+        assert!(!graph.contains(&String::from("github.com")));
+    }
+
+    #[test]
+    fn add_vertex_graph() {
+        let graph = init_empty_graph(10);
+
+        let domain = String::from("github.com");
+
+        graph.add_vertex(Vertex::new(domain.clone()));
+        assert!(graph.contains(&domain));
+    }
+
+    #[test]
+    fn add_edge_graph() {
+        let graph = init_empty_graph(10);
+
+        let src = String::from("github.com");
+        let dst = String::from("google.com");
+
+        graph.add_vertex(Vertex::new(src.clone()));
+        graph.add_vertex(Vertex::new(dst.clone()));
+
+        graph.add_edge(&src, &dst).unwrap(); // if Err -> test FAIL
+    }
+
+    #[test]
+    #[should_panic]
+    fn add_edge_missing_vertex_graph() {
+        let graph = init_empty_graph(10);
+
+        let src = String::from("github.com");
+        let dst = String::from("stackoverflow.com");
+
+        graph.add_vertex(Vertex::new(src.clone()));
+
+        graph.add_edge(&src, &dst).unwrap(); // will panic!
     }
 }
