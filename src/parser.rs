@@ -22,7 +22,9 @@ fn is_new_link(url: &str, src: String, g: &Graph) -> Option<String> {
         if !g.contains(&domain) {
             g.add_vertex(Vertex::new(domain.clone()));
             println!("{} - {}", g.size(), domain);
-            g.add_edge(&src, &domain);
+            if let Err(e) = g.add_edge(&src, &domain) {
+                eprintln!("failed to add edge between {} and {}: {}", src, domain, e);
+            }
             return Some(url.to_string());
         }
     }
