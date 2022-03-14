@@ -79,6 +79,7 @@ dependencies = [
  "async-recursion",
  "clap",
  "futures",
+ "lazy_static",
  "psl",
  "reqwest",
  "scraper",

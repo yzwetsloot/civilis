@@ -1,4 +1,5 @@
 use async_recursion::async_recursion;
+use lazy_static::lazy_static;
 use reqwest::Client;
 use std::error::Error;
 use std::time::Instant;
@@ -12,6 +13,8 @@ pub use args::Args;
 pub use graph::{Graph, Vertex};
 
 pub static mut SIGTERM: bool = false;
+
+lazy_static! {}
 
 pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
     let g = Graph::new(args.shards);
